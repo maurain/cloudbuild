@@ -52,7 +52,7 @@ jobs:
 
       # 优化点 4：使用 --prefer-offline 和 --no-audit 加速依赖安装，减少不必要的网络请求
       - name: Install dependencies
-        run: npm ci --prefer-offline --no-audit
+        run: npm ci --prefer-offline --no-audit > /dev/null
 
       # 优化点 5：启用 expo-github-action 内置的 EAS 缓存
       - name: Setup Expo and EAS
@@ -64,10 +64,10 @@ jobs:
 
       - name: Build iOS App Locally
         run: |
-          eas build --platform ios --profile production --local --non-interactive --output=app.ipa
+          eas build --platform ios --profile production --local --non-interactive --output=app.ipa > /dev/null
 
       - name: Submit to TestFlight
         run: |
-          eas submit --platform ios --profile production --path=app.ipa --non-interactive
+          eas submit --platform ios --profile production --path=app.ipa --non-interactive > /dev/null
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
