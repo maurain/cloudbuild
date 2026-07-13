@@ -41,10 +41,10 @@ jobs:
 
       - name: Build iOS App Locally
         run: |
-          eas build --platform ios --profile production --local --non-interactive --output=app.ipa
+          eas build --platform ios --profile testflight --local --non-interactive --output=app.ipa
 
       - name: Submit to TestFlight
         run: |
-          eas submit --platform ios --profile production --path=app.ipa --non-interactive
+          eas submit --platform ios --profile testflight --path=app.ipa --non-interactive
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
