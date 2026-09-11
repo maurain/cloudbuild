@@ -79,7 +79,41 @@ jobs:
           eas-cache: true
           packager: npm
 
-      # 6. 自增 EAS Android 版本号（preview 为奇数，production 为偶数）
+      # 6. 配置 EAS Android 签名凭据（优先使用 GitHub Secrets 的 Release Keystore，未配置时回退使用 debug.keystore）
+      - name: Configure Android signing credentials for EAS
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "Using Release Keystore from GitHub Secrets..."
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+            cat << EOF > credentials.json
+            {
+              "android": {
+                "keystore": {
+                  "keystorePath": "release.keystore",
+                  "keystorePassword": "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}",
+                  "keyAlias": "${{ secrets.ANDROID_KEY_ALIAS }}",
+                  "keyPassword": "${{ secrets.ANDROID_KEY_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}"
+                }
+              }
+            }
+            EOF
+          else
+            echo "ANDROID_KEYSTORE_BASE64 secret not set, falling back to local debug.keystore..."
+            cat << 'EOF' > credentials.json
+            {
+              "android": {
+                "keystore": {
+                  "keystorePath": "android/app/debug.keystore",
+                  "keystorePassword": "android",
+                  "keyAlias": "androiddebugkey",
+                  "keyPassword": "android"
+                }
+              }
+            }
+            EOF
+          fi
+
+      # 7. 自增 EAS Android 版本号（preview 为奇数，production 为偶数）
       - name: Bump EAS build number
         run: |
           PROFILE="${{ github.event.inputs.profile || 'preview' }}"
@@ -87,7 +121,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
-      # 7. 使用 EAS 本地命令编译 Android APK
+      # 8. 使用 EAS 本地命令编译 Android APK
       # 设置 ORG_GRADLE_PROJECT_reactNativeArchitectures 同时编译 x86_64 (模拟器) 与 arm64-v8a (真机)
       - name: Build Android APK Locally via EAS
         run: |
@@ -97,20 +131,20 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           ORG_GRADLE_PROJECT_reactNativeArchitectures: 'x86_64,arm64-v8a'
 
-      # 8. 配置 Linux KVM 硬件虚拟化权限，确保模拟器硬件加速正常工作
+      # 9. 配置 Linux KVM 硬件虚拟化权限，确保模拟器硬件加速正常工作
       - name: Enable KVM permissions
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      # 9. 安装 Maestro UI 自动化测试工具 CLI
+      # 10. 安装 Maestro UI 自动化测试工具 CLI
       - name: Install Maestro CLI
         run: |
           curl -fsSL "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> $GITHUB_PATH
 
-      # 10. 启动 Android 模拟器并在其中执行自动化测试
+      # 11. 启动 Android 模拟器并在其中执行自动化测试
       - name: Run Android UI tests in emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -142,13 +176,13 @@ jobs:
               --format junit \
               --output test-results/maestro-report.xml
 
-      # 11. 测试失败时捕获 Android 系统 logcat 日志便于快速排查定位
+      # 12. 测试失败时捕获 Android 系统 logcat 日志便于快速排查定位
       - name: Capture Android logcat on failure
         if: failure()
         run: |
           adb logcat -d > android-logcat.log || true
 
-      # 12. 将编译产物 (APK) 与测试报告发布/上传至目标仓库 nextie-ai/tuanziclient 的 GitHub Release
+      # 13. 将编译产物 (APK) 与测试报告发布/上传至目标仓库 nextie-ai/tuanziclient 的 GitHub Release
       - name: Upload APK and artifacts to nextie-ai/tuanziclient
         if: always() && hashFiles('app.apk') != ''
         run: |
@@ -184,7 +218,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      # 13. 同时将测试产物上传至当前 Runner 工作流（供网页直接下载查看截屏与日志）
+      # 14. 同时将测试产物上传至当前 Runner 工作流（供网页直接下载查看截屏与日志）
       - name: Upload local workflow artifacts
         if: always()
         uses: actions/upload-artifact@v4
