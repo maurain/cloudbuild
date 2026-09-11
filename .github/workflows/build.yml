@@ -2,6 +2,15 @@ name: build
 
 on:
   workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Build profile (testflight: int release / production: prod release)'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - testflight
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -38,13 +47,21 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
           eas-cache: true
-
+          
+      - name: Bump EAS build number (odd for int, even for prod)
+        run: |
+          node scripts/bump-eas-version.js ${{ github.event.inputs.profile || 'production' }} ios
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          
       - name: Build iOS App Locally
         run: |
-          eas build --platform ios --profile testflight --local --non-interactive --output=app.ipa
+          PROFILE="${{ github.event.inputs.profile || 'production' }}"
+          eas build --platform ios --profile "$PROFILE" --local --non-interactive --output=app.ipa
 
       - name: Submit to TestFlight
         run: |
-          eas submit --platform ios --profile testflight --path=app.ipa --non-interactive
+          PROFILE="${{ github.event.inputs.profile || 'production' }}"
+          eas submit --platform ios --profile "$PROFILE" --path=app.ipa --non-interactive
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
