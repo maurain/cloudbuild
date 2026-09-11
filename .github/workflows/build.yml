@@ -38,9 +38,6 @@ jobs:
           node-version: 22.x
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci --prefer-offline --no-audit
-
       - name: Setup Expo and EAS
         uses: expo/expo-github-action@v8
         with:
@@ -54,6 +51,10 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           
+      - name: Use CocoaPods CDN source
+        run: |
+          sed -i '' 's|https://github.com/CocoaPods/Specs.git|https://cdn.cocoapods.org/|g' ios/Podfile
+
       - name: Build iOS App Locally
         run: |
           PROFILE="${{ github.event.inputs.profile || 'production' }}"
@@ -62,6 +63,6 @@ jobs:
       - name: Submit to TestFlight
         run: |
           PROFILE="${{ github.event.inputs.profile || 'production' }}"
-          eas submit --platform ios --profile "$PROFILE" --path=app.ipa --non-interactive
+          eas submit --platform ios --profile "$PROFILE" --path=app.ipa --non-interactive --no-wait
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
