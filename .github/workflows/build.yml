@@ -32,6 +32,12 @@ jobs:
         with:
           xcode-version: '26.3'
 
+      - name: Configure ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}-ios-build
+          max-size: 2000M
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -51,15 +57,18 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           
-      - name: Use CocoaPods CDN source
+      - name: Configure CocoaPods and ccache
         run: |
           sed -i '' 's|https://github.com/CocoaPods/Specs.git|https://cdn.cocoapods.org/|g' ios/Podfile
           sed -i '' 's|https://github.com/CocoaPods/Specs.git|trunk|g' ios/Podfile.lock
+          node -e "const f='ios/Podfile.properties.json', j=JSON.parse(require('fs').readFileSync(f,'utf8')); j['apple.ccacheEnabled']='true'; require('fs').writeFileSync(f, JSON.stringify(j, null, 2));"
 
       - name: Build iOS App Locally
         run: |
           PROFILE="${{ github.event.inputs.profile || 'production' }}"
           eas build --platform ios --profile "$PROFILE" --local --non-interactive --output=app.ipa
+        env:
+          USE_CCACHE: '1'
 
       - name: Submit to TestFlight
         run: |
