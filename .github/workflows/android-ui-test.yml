@@ -70,6 +70,38 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
+      # 5. 配置 Gradle 全局仓库过滤（通过 ~/.gradle/init.d/，无需修改项目任何代码与 android 目录）
+      # 限定阿里云源仅解析 com.aliyun.* 与 com.alibaba.*，核心 AndroidX / Compose 强制走 Google 官方源，避免海外 Runner 偶发 502
+      - name: Configure Gradle repository filtering
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat << 'EOF' > ~/.gradle/init.d/aliyun-filter.gradle
+          allprojects {
+            buildscript {
+              repositories {
+                all { ArtifactRepository repo ->
+                  if (repo instanceof MavenArtifactRepository && repo.url.toString().contains("maven.aliyun.com")) {
+                    content {
+                      includeGroupByRegex "com\\.aliyun.*"
+                      includeGroupByRegex "com\\.alibaba.*"
+                    }
+                  }
+                }
+              }
+            }
+            repositories {
+              all { ArtifactRepository repo ->
+                if (repo instanceof MavenArtifactRepository && repo.url.toString().contains("maven.aliyun.com")) {
+                  content {
+                    includeGroupByRegex "com\\.aliyun.*"
+                    includeGroupByRegex "com\\.alibaba.*"
+                  }
+                }
+              }
+            }
+          }
+          EOF
+
       # 5. 安装并配置 Expo & EAS CLI
       - name: Setup Expo and EAS
         uses: expo/expo-github-action@v8
