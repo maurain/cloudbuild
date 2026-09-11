@@ -81,37 +81,39 @@ jobs:
 
       # 6. 配置 EAS Android 签名凭据（优先使用 GitHub Secrets 的 Release Keystore，未配置时回退使用 debug.keystore）
       - name: Configure Android signing credentials for EAS
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "Using Release Keystore from GitHub Secrets..."
-            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
-            cat << EOF > credentials.json
-            {
-              "android": {
-                "keystore": {
-                  "keystorePath": "release.keystore",
-                  "keystorePassword": "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}",
-                  "keyAlias": "${{ secrets.ANDROID_KEY_ALIAS }}",
-                  "keyPassword": "${{ secrets.ANDROID_KEY_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}"
-                }
-              }
-            }
-            EOF
-          else
-            echo "ANDROID_KEYSTORE_BASE64 secret not set, falling back to local debug.keystore..."
-            cat << 'EOF' > credentials.json
-            {
-              "android": {
-                "keystore": {
-                  "keystorePath": "android/app/debug.keystore",
-                  "keystorePassword": "android",
-                  "keyAlias": "androiddebugkey",
-                  "keyPassword": "android"
-                }
-              }
-            }
-            EOF
-          fi
+          node -e "
+          const fs = require('fs');
+          const keystoreBase64 = process.env.KEYSTORE_BASE64?.trim();
+          let keystoreConfig;
+
+          if (keystoreBase64) {
+            console.log('Using Release Keystore from GitHub Secrets...');
+            fs.writeFileSync('release.keystore', Buffer.from(keystoreBase64, 'base64'));
+            keystoreConfig = {
+              keystorePath: 'release.keystore',
+              keystorePassword: process.env.KEYSTORE_PASSWORD || '',
+              keyAlias: process.env.KEY_ALIAS || '',
+              keyPassword: process.env.KEY_PASSWORD || process.env.KEYSTORE_PASSWORD || ''
+            };
+          } else {
+            console.log('ANDROID_KEYSTORE_BASE64 secret not set, falling back to local debug.keystore...');
+            keystoreConfig = {
+              keystorePath: 'android/app/debug.keystore',
+              keystorePassword: 'android',
+              keyAlias: 'androiddebugkey',
+              keyPassword: 'android'
+            };
+          }
+
+          fs.writeFileSync('credentials.json', JSON.stringify({ android: { keystore: keystoreConfig } }, null, 2));
+          console.log('credentials.json generated successfully.');
+          "
 
       # 7. 自增 EAS Android 版本号（preview 为奇数，production 为偶数）
       - name: Bump EAS build number
