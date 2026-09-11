@@ -54,6 +54,7 @@ jobs:
       - name: Use CocoaPods CDN source
         run: |
           sed -i '' 's|https://github.com/CocoaPods/Specs.git|https://cdn.cocoapods.org/|g' ios/Podfile
+          sed -i '' 's|https://github.com/CocoaPods/Specs.git|trunk|g' ios/Podfile.lock
 
       - name: Build iOS App Locally
         run: |
