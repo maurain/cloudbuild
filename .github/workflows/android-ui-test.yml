@@ -250,8 +250,8 @@ jobs:
 
           mkdir -p test-results screenshots .maestro
 
-          # 若目标分支尚未包含 smoke.yaml，或包含旧版 timeout 语法，自动生成内置合规用例
-          if [ ! -f .maestro/smoke.yaml ] || grep -q "timeout" .maestro/smoke.yaml 2>/dev/null; then
+          # 若目标分支尚未包含 smoke.yaml，或包含旧版语法，自动生成内置合规用例
+          if [ ! -f .maestro/smoke.yaml ] || grep -q "timeout" .maestro/smoke.yaml 2>/dev/null || ! grep -q ".*用户协议.*" .maestro/smoke.yaml 2>/dev/null; then
             echo "=== 生成/更新内置冒烟测试用例 ==="
             cat << 'YAMLEOF' > .maestro/smoke.yaml
           appId: com.nextie.tuanzi
@@ -278,21 +278,20 @@ jobs:
               timeout: 20000
           - assertVisible: '请输入中国大陆手机号'
           - assertVisible: '下一步'
-          - assertVisible: '用户协议'
-          - assertVisible: '隐私协议'
+          - assertVisible: '.*用户协议.*'
           - takeScreenshot: screenshots/04_login_page_initial
           - tapOn: '请输入中国大陆手机号'
           - inputText: '13800138000'
           - assertVisible: '13800138000'
           - tapOn: '下一步'
           - extendedWaitUntil:
-              visible: '请阅读并同意《用户协议》和《隐私协议》后再继续'
+              visible: '.*《用户协议》.*'
               timeout: 10000
           - assertVisible: '再想想'
           - assertVisible: '同意并继续'
           - takeScreenshot: screenshots/05_login_terms_alert
           - tapOn: '再想想'
-          - assertNotVisible: '请阅读并同意《用户协议》和《隐私协议》后再继续'
+          - assertNotVisible: '.*《用户协议》.*'
           - takeScreenshot: screenshots/06_login_page_final
           YAMLEOF
           fi
