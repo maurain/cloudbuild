@@ -11,6 +11,11 @@ on:
         options:
           - preview
           - production
+      architectures:
+        description: 'Android ABIs (default: x86_64,arm64-v8a for emulator and real devices; or x86_64 for fast emulator-only test)'
+        required: false
+        default: 'x86_64,arm64-v8a'
+        type: string
       ref:
         description: 'Target branch / tag / commit SHA in nextie-ai/tuanziclient'
         required: false
@@ -70,11 +75,18 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      # 5. 配置 Gradle 全局仓库过滤（通过 ~/.gradle/init.d/，无需修改项目任何代码与 android 目录）
-      # 限定阿里云源仅解析 com.aliyun.* 与 com.alibaba.*，核心 AndroidX / Compose 强制走 Google 官方源，避免海外 Runner 偶发 502
-      - name: Configure Gradle repository filtering
+      # 5. 配置 Gradle 全局参数与仓库过滤（无需修改项目 android 目录）
+      # - 调大 JVM Metaspace 与堆内存至 1024m / 4096m，彻底解决 OutOfMemoryError: Metaspace
+      # - 限定阿里云源仅解析 com.aliyun.* 与 com.alibaba.*，核心 AndroidX / Compose 强制走 Google 官方源，避免 502
+      - name: Configure Gradle JVM memory and repository filtering
         run: |
           mkdir -p ~/.gradle/init.d
+          cat << 'EOF' > ~/.gradle/gradle.properties
+          org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC
+          org.gradle.parallel=true
+          org.gradle.daemon=true
+          EOF
+
           cat << 'EOF' > ~/.gradle/init.d/aliyun-filter.gradle
           allprojects {
             buildscript {
@@ -102,7 +114,7 @@ jobs:
           }
           EOF
 
-      # 5. 安装并配置 Expo & EAS CLI
+      # 6. 安装并配置 Expo & EAS CLI
       - name: Setup Expo and EAS
         uses: expo/expo-github-action@v8
         with:
@@ -111,7 +123,7 @@ jobs:
           eas-cache: true
           packager: npm
 
-      # 6. 配置 EAS Android 签名凭据（优先使用 GitHub Secrets 的 Release Keystore，未配置时回退使用 debug.keystore）
+      # 7. 配置 EAS Android 签名凭据（优先使用 GitHub Secrets 的 Release Keystore，未配置时回退使用 debug.keystore）
       - name: Configure Android signing credentials for EAS
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -147,7 +159,7 @@ jobs:
           console.log('credentials.json generated successfully.');
           "
 
-      # 7. 自增 EAS Android 版本号（preview 为奇数，production 为偶数）
+      # 8. 自增 EAS Android 版本号（preview 为奇数，production 为偶数）
       - name: Bump EAS build number
         run: |
           PROFILE="${{ github.event.inputs.profile || 'preview' }}"
@@ -155,30 +167,31 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
-      # 8. 使用 EAS 本地命令编译 Android APK
-      # 设置 ORG_GRADLE_PROJECT_reactNativeArchitectures 同时编译 x86_64 (模拟器) 与 arm64-v8a (真机)
+      # 9. 使用 EAS 本地命令编译 Android APK
       - name: Build Android APK Locally via EAS
         run: |
           PROFILE="${{ github.event.inputs.profile || 'preview' }}"
           eas build --platform android --profile "$PROFILE" --local --non-interactive --output=app.apk
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          ORG_GRADLE_PROJECT_reactNativeArchitectures: 'x86_64,arm64-v8a'
+          ORG_GRADLE_PROJECT_reactNativeArchitectures: ${{ github.event.inputs.architectures || 'x86_64,arm64-v8a' }}
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC'"
+          EAS_SKIP_AUTO_FINGERPRINT: "1"
 
-      # 9. 配置 Linux KVM 硬件虚拟化权限，确保模拟器硬件加速正常工作
+      # 10. 配置 Linux KVM 硬件虚拟化权限，确保模拟器硬件加速正常工作
       - name: Enable KVM permissions
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      # 10. 安装 Maestro UI 自动化测试工具 CLI
+      # 11. 安装 Maestro UI 自动化测试工具 CLI
       - name: Install Maestro CLI
         run: |
           curl -fsSL "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> $GITHUB_PATH
 
-      # 11. 启动 Android 模拟器并在其中执行自动化测试
+      # 12. 启动 Android 模拟器并在其中执行自动化测试
       - name: Run Android UI tests in emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -210,13 +223,13 @@ jobs:
               --format junit \
               --output test-results/maestro-report.xml
 
-      # 12. 测试失败时捕获 Android 系统 logcat 日志便于快速排查定位
+      # 13. 测试失败时捕获 Android 系统 logcat 日志便于快速排查定位
       - name: Capture Android logcat on failure
         if: failure()
         run: |
           adb logcat -d > android-logcat.log || true
 
-      # 13. 将编译产物 (APK) 与测试报告发布/上传至目标仓库 nextie-ai/tuanziclient 的 GitHub Release
+      # 14. 将编译产物 (APK) 与测试报告发布/上传至目标仓库 nextie-ai/tuanziclient 的 GitHub Release
       - name: Upload APK and artifacts to nextie-ai/tuanziclient
         if: always() && hashFiles('app.apk') != ''
         run: |
@@ -252,7 +265,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      # 14. 同时将测试产物上传至当前 Runner 工作流（供网页直接下载查看截屏与日志）
+      # 15. 同时将测试产物上传至当前 Runner 工作流（供网页直接下载查看截屏与日志）
       - name: Upload local workflow artifacts
         if: always()
         uses: actions/upload-artifact@v4
