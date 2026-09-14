@@ -30,11 +30,6 @@ on:
           - '31'
           - '33'
           - '34'
-      release-tag:
-        description: 'Release Tag on nextie-ai/tuanziclient (empty = auto: android-v<buildNumber>)'
-        required: false
-        default: ''
-        type: string
 
 # 并发控制：同一分支的最新提交自动取消旧的构建流程
 concurrency:
@@ -191,7 +186,89 @@ jobs:
           curl -fsSL "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> $GITHUB_PATH
 
-      # 12. 启动 Android 模拟器并在其中执行自动化测试
+      # 12. 准备完整的模拟器测试运行脚本（解决 actions 逐行执行 shell 的问题）
+      - name: Prepare emulator test script
+        run: |
+          cat << 'EOF' > run-emulator-tests.sh
+          #!/usr/bin/env bash
+          set -e
+
+          export PATH="$PATH:$HOME/.maestro/bin"
+
+          echo "=== 等待 Android 模拟器准备就绪 ==="
+          adb devices
+          adb wait-for-device
+
+          echo "=== 安装 EAS 编译生成的 App APK ==="
+          adb install -r -d -g app.apk
+
+          echo "=== 验证 App 安装成功 ==="
+          adb shell pm list packages | grep com.nextie.tuanzi
+
+          echo "=== 验证 Maestro CLI 运行环境 ==="
+          maestro --version
+
+          mkdir -p test-results screenshots .maestro
+
+          # 若目标分支尚未包含 smoke.yaml，自动生成内置冒烟测试用例
+          if [ ! -f .maestro/smoke.yaml ]; then
+            echo "=== 目标分支未包含 .maestro/smoke.yaml，生成内置冒烟测试用例 ==="
+            cat << 'YAMLEOF' > .maestro/smoke.yaml
+          appId: com.nextie.tuanzi
+          ---
+          - launchApp:
+              clearState: true
+          - assertVisible:
+              text: '下一页'
+              timeout: 30000
+          - takeScreenshot: screenshots/01_prologue_page_1
+          - tapOn: '下一页'
+          - assertVisible:
+              text: '下一页'
+              timeout: 10000
+          - takeScreenshot: screenshots/02_prologue_page_2
+          - tapOn: '下一页'
+          - assertVisible:
+              text: '点击进入平行世界'
+              timeout: 10000
+          - takeScreenshot: screenshots/03_prologue_page_3
+          - tapOn: '点击进入平行世界'
+          - assertVisible:
+              text: '请输入手机号'
+              timeout: 15000
+          - assertVisible: '请输入中国大陆手机号'
+          - assertVisible: '下一步'
+          - assertVisible: '用户协议'
+          - assertVisible: '隐私协议'
+          - takeScreenshot: screenshots/04_login_page_initial
+          - tapOn: '请输入中国大陆手机号'
+          - inputText: '13800138000'
+          - assertVisible: '13800138000'
+          - tapOn: '下一步'
+          - assertVisible:
+              text: '请阅读并同意《用户协议》和《隐私协议》后再继续'
+              timeout: 5000
+          - assertVisible: '再想想'
+          - assertVisible: '同意并继续'
+          - takeScreenshot: screenshots/05_login_terms_alert
+          - tapOn: '再想想'
+          - assertNotVisible: '请阅读并同意《用户协议》和《隐私协议》后再继续'
+          - takeScreenshot: screenshots/06_login_page_final
+          YAMLEOF
+          fi
+
+          echo "=== 开始执行 Maestro UI 自动化测试 ==="
+          TEST_STATUS=0
+          maestro test .maestro/smoke.yaml --format junit --output test-results/maestro-report.xml || TEST_STATUS=$?
+
+          echo "=== 捕获模拟器运行时 logcat ==="
+          adb logcat -d > android-logcat.log || true
+
+          exit $TEST_STATUS
+          EOF
+          chmod +x run-emulator-tests.sh
+
+      # 13. 启动 Android 模拟器并在其中执行自动化测试
       - name: Run Android UI tests in emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -200,117 +277,9 @@ jobs:
           arch: x86_64
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: |
-            export PATH="$PATH:$HOME/.maestro/bin"
+          script: bash run-emulator-tests.sh
 
-            echo "=== 等待 Android 模拟器准备就绪 ==="
-            adb devices
-            adb wait-for-device
-
-            echo "=== 安装 EAS 编译生成的 App APK ==="
-            adb install -r -d -g app.apk
-
-            echo "=== 验证 App 安装成功 ==="
-            adb shell pm list packages | grep com.nextie.tuanzi
-
-            echo "=== 验证 Maestro CLI 运行环境 ==="
-            maestro --version
-
-            mkdir -p test-results screenshots .maestro
-
-            # 若目标分支尚未包含 smoke.yaml，自动生成内置冒烟测试用例
-            if [ ! -f .maestro/smoke.yaml ]; then
-              echo "=== 目标分支未包含 .maestro/smoke.yaml，生成内置冒烟测试用例 ==="
-              cat << 'EOF' > .maestro/smoke.yaml
-            appId: com.nextie.tuanzi
-            ---
-            - launchApp:
-                clearState: true
-            - assertVisible:
-                text: '下一页'
-                timeout: 30000
-            - takeScreenshot: screenshots/01_prologue_page_1
-            - tapOn: '下一页'
-            - assertVisible:
-                text: '下一页'
-                timeout: 10000
-            - takeScreenshot: screenshots/02_prologue_page_2
-            - tapOn: '下一页'
-            - assertVisible:
-                text: '点击进入平行世界'
-                timeout: 10000
-            - takeScreenshot: screenshots/03_prologue_page_3
-            - tapOn: '点击进入平行世界'
-            - assertVisible:
-                text: '请输入手机号'
-                timeout: 15000
-            - assertVisible: '请输入中国大陆手机号'
-            - assertVisible: '下一步'
-            - assertVisible: '用户协议'
-            - assertVisible: '隐私协议'
-            - takeScreenshot: screenshots/04_login_page_initial
-            - tapOn: '请输入中国大陆手机号'
-            - inputText: '13800138000'
-            - assertVisible: '13800138000'
-            - tapOn: '下一步'
-            - assertVisible:
-                text: '请阅读并同意《用户协议》和《隐私协议》后再继续'
-                timeout: 5000
-            - assertVisible: '再想想'
-            - assertVisible: '同意并继续'
-            - takeScreenshot: screenshots/05_login_terms_alert
-            - tapOn: '再想想'
-            - assertNotVisible: '请阅读并同意《用户协议》和《隐私协议》后再继续'
-            - takeScreenshot: screenshots/06_login_page_final
-            EOF
-            fi
-
-            echo "=== 开始执行 Maestro UI 自动化测试 ==="
-            TEST_STATUS=0
-            maestro test .maestro/smoke.yaml --format junit --output test-results/maestro-report.xml || TEST_STATUS=$?
-
-            echo "=== 捕获模拟器运行时 logcat ==="
-            adb logcat -d > android-logcat.log || true
-
-            exit $TEST_STATUS
-
-      # 13. 将编译产物 (APK) 与测试报告发布/上传至目标仓库 nextie-ai/tuanziclient 的 GitHub Release
-      - name: Upload APK and artifacts to nextie-ai/tuanziclient
-        if: always() && hashFiles('app.apk') != ''
-        run: |
-          PROFILE="${{ github.event.inputs.profile || 'preview' }}"
-          TAG="${{ github.event.inputs.release-tag }}"
-          if [ -z "$TAG" ]; then
-            TAG="android-v${EAS_BUILD_NUMBER:-${GITHUB_RUN_NUMBER}}"
-          fi
-
-          TITLE="Android Build ${EAS_BUILD_NUMBER:-#$GITHUB_RUN_NUMBER} (${PROFILE})"
-          NOTES="Automated Android EAS build ($PROFILE) and UI tests run from GitHub Actions."
-
-          echo "Target repo: nextie-ai/tuanziclient, Tag: $TAG"
-
-          if gh release view "$TAG" --repo nextie-ai/tuanziclient >/dev/null 2>&1; then
-            echo "Release $TAG already exists. Uploading/updating assets..."
-            gh release upload "$TAG" app.apk --repo nextie-ai/tuanziclient --clobber
-            if [ -f test-results/maestro-report.xml ]; then
-              gh release upload "$TAG" test-results/maestro-report.xml --repo nextie-ai/tuanziclient --clobber || true
-            fi
-          else
-            echo "Creating new release $TAG on nextie-ai/tuanziclient..."
-            gh release create "$TAG" app.apk \
-              --repo nextie-ai/tuanziclient \
-              --title "$TITLE" \
-              --notes "$NOTES" \
-              --target "${{ github.event.inputs.ref || 'main' }}" \
-              --prerelease
-            if [ -f test-results/maestro-report.xml ]; then
-              gh release upload "$TAG" test-results/maestro-report.xml --repo nextie-ai/tuanziclient --clobber || true
-            fi
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-
-      # 14. 同时将测试产物上传至当前 Runner 工作流（供网页直接下载查看截屏与日志）
+      # 14. 上传测试产物至当前 Runner 工作流（供网页直接下载查看截屏、日志与 APK）
       - name: Upload local workflow artifacts
         if: always()
         uses: actions/upload-artifact@v4
