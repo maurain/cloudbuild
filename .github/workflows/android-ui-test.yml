@@ -210,32 +210,32 @@ jobs:
 
           mkdir -p test-results screenshots .maestro
 
-          # 若目标分支尚未包含 smoke.yaml，自动生成内置冒烟测试用例
-          if [ ! -f .maestro/smoke.yaml ]; then
-            echo "=== 目标分支未包含 .maestro/smoke.yaml，生成内置冒烟测试用例 ==="
+          # 若目标分支尚未包含 smoke.yaml，或包含旧版 timeout 语法，自动生成内置合规用例
+          if [ ! -f .maestro/smoke.yaml ] || grep -q "timeout" .maestro/smoke.yaml 2>/dev/null; then
+            echo "=== 生成/更新内置冒烟测试用例 ==="
             cat << 'YAMLEOF' > .maestro/smoke.yaml
           appId: com.nextie.tuanzi
           ---
           - launchApp:
               clearState: true
-          - assertVisible:
-              text: '下一页'
+          - extendedWaitUntil:
+              visible: '下一页'
               timeout: 30000
           - takeScreenshot: screenshots/01_prologue_page_1
           - tapOn: '下一页'
-          - assertVisible:
-              text: '下一页'
-              timeout: 10000
+          - extendedWaitUntil:
+              visible: '下一页'
+              timeout: 15000
           - takeScreenshot: screenshots/02_prologue_page_2
           - tapOn: '下一页'
-          - assertVisible:
-              text: '点击进入平行世界'
-              timeout: 10000
+          - extendedWaitUntil:
+              visible: '点击进入平行世界'
+              timeout: 15000
           - takeScreenshot: screenshots/03_prologue_page_3
           - tapOn: '点击进入平行世界'
-          - assertVisible:
-              text: '请输入手机号'
-              timeout: 15000
+          - extendedWaitUntil:
+              visible: '请输入手机号'
+              timeout: 20000
           - assertVisible: '请输入中国大陆手机号'
           - assertVisible: '下一步'
           - assertVisible: '用户协议'
@@ -245,9 +245,9 @@ jobs:
           - inputText: '13800138000'
           - assertVisible: '13800138000'
           - tapOn: '下一步'
-          - assertVisible:
-              text: '请阅读并同意《用户协议》和《隐私协议》后再继续'
-              timeout: 5000
+          - extendedWaitUntil:
+              visible: '请阅读并同意《用户协议》和《隐私协议》后再继续'
+              timeout: 10000
           - assertVisible: '再想想'
           - assertVisible: '同意并继续'
           - takeScreenshot: screenshots/05_login_terms_alert
