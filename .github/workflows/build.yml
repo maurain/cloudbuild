@@ -11,6 +11,11 @@ on:
         options:
           - prod
           - int
+      ref:
+        description: 'Target branch / tag / commit SHA in nextie-ai/tuanziclient'
+        required: false
+        default: 'main'
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -26,6 +31,7 @@ jobs:
         with:
           repository: 'nextie-ai/tuanziclient'
           token: ${{ secrets.GH_PAT }}
+          ref: ${{ github.event.inputs.ref || 'main' }}
 
       - name: Set up Xcode version
         uses: maxim-lobanov/setup-xcode@v1
@@ -54,8 +60,14 @@ jobs:
 
       - name: Configure CocoaPods
         run: |
-          sed -i '' 's|https://github.com/CocoaPods/Specs.git|https://cdn.cocoapods.org/|g' ios/Podfile
-          sed -i '' 's|https://github.com/CocoaPods/Specs.git|trunk|g' ios/Podfile.lock
+          if [ -f ios/Podfile ]; then
+            sed -i '' 's|https://github.com/CocoaPods/Specs.git|https://cdn.cocoapods.org/|g' ios/Podfile
+          else
+            echo "ios/Podfile not found (managed by Expo prebuild), skipping."
+          fi
+          if [ -f ios/Podfile.lock ]; then
+            sed -i '' 's|https://github.com/CocoaPods/Specs.git|trunk|g' ios/Podfile.lock
+          fi
 
       - name: Build iOS App Locally
         run: |
