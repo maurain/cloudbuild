@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: 'Build profile (testflight: int release / production: prod release)'
+        description: 'Build profile (int: int/testflight release / prod: production release)'
         required: true
-        default: 'production'
+        default: 'prod'
         type: choice
         options:
-          - production
-          - testflight
+          - prod
+          - int
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -39,19 +39,19 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit
-    
+
       - name: Setup Expo and EAS
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
-          
+
       - name: Bump EAS build number (odd for int, even for prod)
         run: |
-          node scripts/bump-eas-version.js ${{ github.event.inputs.profile || 'production' }} ios
+          node scripts/bump-eas-version.js ${{ github.event.inputs.profile || 'prod' }} ios
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          
+
       - name: Configure CocoaPods
         run: |
           sed -i '' 's|https://github.com/CocoaPods/Specs.git|https://cdn.cocoapods.org/|g' ios/Podfile
@@ -59,12 +59,12 @@ jobs:
 
       - name: Build iOS App Locally
         run: |
-          PROFILE="${{ github.event.inputs.profile || 'production' }}"
+          PROFILE="${{ github.event.inputs.profile || 'prod' }}"
           eas build --platform ios --profile "$PROFILE" --local --non-interactive --output=app.ipa
 
-      - name: Submit to TestFlight
+      - name: Submit to TestFlight / App Store
         run: |
-          PROFILE="${{ github.event.inputs.profile || 'production' }}"
+          PROFILE="${{ github.event.inputs.profile || 'prod' }}"
           eas submit --platform ios --profile "$PROFILE" --path=app.ipa --non-interactive --no-wait
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
