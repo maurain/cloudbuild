@@ -82,7 +82,7 @@ jobs:
         id: prepare-dsym
         run: |
           PROFILE="${{ github.event.inputs.profile || 'prod' }}"
-          VERSION=$(node -p "try { require('./package.json').version } catch(e) { '' }")
+          VERSION=$(node -p "try { require('./app.json').expo?.version || require('./package.json').version } catch(e) { '' }")
           BUILD_NUM="${EAS_BUILD_NUMBER:-${GITHUB_RUN_NUMBER}}"
 
           if [ -n "$VERSION" ]; then
