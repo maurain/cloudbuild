@@ -86,8 +86,10 @@ jobs:
           BUILD_NUM="${EAS_BUILD_NUMBER:-${GITHUB_RUN_NUMBER}}"
 
           if [ -n "$VERSION" ]; then
+            ARTIFACT_NAME="tuanzi-${PROFILE}-v${VERSION}-b${BUILD_NUM}-dsym"
             DSYM_NAME="tuanzi-${PROFILE}-v${VERSION}-b${BUILD_NUM}.app.dSYM.zip"
           else
+            ARTIFACT_NAME="tuanzi-${PROFILE}-b${BUILD_NUM}-dsym"
             DSYM_NAME="tuanzi-${PROFILE}-b${BUILD_NUM}.app.dSYM.zip"
           fi
 
@@ -121,6 +123,7 @@ jobs:
 
           rm -rf "$WORK_DIR"
 
+          echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
           echo "dsym_path=$DSYM_NAME" >> $GITHUB_OUTPUT
           echo "dsym_name=$DSYM_NAME" >> $GITHUB_OUTPUT
           echo "profile=$PROFILE" >> $GITHUB_OUTPUT
@@ -130,7 +133,7 @@ jobs:
       - name: Upload dSYM Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tuanzi-${{ github.event.inputs.profile || 'prod' }}-dsym
+          name: ${{ steps.prepare-dsym.outputs.artifact_name }}
           path: ${{ steps.prepare-dsym.outputs.dsym_path }}
           retention-days: 30
 
@@ -152,11 +155,12 @@ jobs:
           | **Profile** | \`${{ steps.prepare-dsym.outputs.profile }}\` |
           | **Version** | \`${{ steps.prepare-dsym.outputs.version }}\` |
           | **Build Number** | \`${{ steps.prepare-dsym.outputs.build_num }}\` |
+          | **Artifact 名称** | \`${{ steps.prepare-dsym.outputs.artifact_name }}\` |
           | **dSYM 符号表文件** | \`${{ steps.prepare-dsym.outputs.dsym_name }}\` |
           | **分支 / Commit** | \`${{ github.event.inputs.ref || 'main' }}\` |
 
           ### ⬇️ 符号表 (dSYM) 下载指引
           1. 滚动至当前页面底部的 **Artifacts** 区域；
-          2. 点击 **\`tuanzi-${{ github.event.inputs.profile || 'prod' }}-dsym\`** 进行下载；
+          2. 点击 **\`${{ steps.prepare-dsym.outputs.artifact_name }}\`** 进行下载；
           3. 解压后可获得 **\`${{ steps.prepare-dsym.outputs.dsym_name }}\`**（内含 \`app.app.dSYM\` 及 \`ShareExtension.appex.dSYM\`），可直接用于 EMAS 崩溃分析等平台上传。
           EOF
