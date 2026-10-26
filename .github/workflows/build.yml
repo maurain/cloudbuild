@@ -70,9 +70,69 @@ jobs:
           fi
 
       - name: Build iOS App Locally
+        env:
+          EAS_LOCAL_BUILD_WORKINGDIR: ${{ runner.temp }}/eas-build-local
+          EAS_LOCAL_BUILD_SKIP_CLEANUP: '1'
         run: |
+          rm -rf "$EAS_LOCAL_BUILD_WORKINGDIR"
           PROFILE="${{ github.event.inputs.profile || 'prod' }}"
           eas build --platform ios --profile "$PROFILE" --local --non-interactive --output=app.ipa
+
+      - name: Prepare dSYM for download
+        id: prepare-dsym
+        run: |
+          PROFILE="${{ github.event.inputs.profile || 'prod' }}"
+          VERSION=$(node -p "try { require('./package.json').version } catch(e) { '' }")
+          BUILD_NUM="${EAS_BUILD_NUMBER:-${GITHUB_RUN_NUMBER}}"
+
+          if [ -n "$VERSION" ]; then
+            DSYM_NAME="tuanzi-${PROFILE}-v${VERSION}-b${BUILD_NUM}.app.dSYM.zip"
+          else
+            DSYM_NAME="tuanzi-${PROFILE}-b${BUILD_NUM}.app.dSYM.zip"
+          fi
+
+          WORK_DIR="${{ runner.temp }}/eas-build-local"
+          DSYM_ZIP=$(find "$WORK_DIR" -name "*.dSYM.zip" -type f 2>/dev/null | head -n 1)
+
+          if [ -n "$DSYM_ZIP" ] && [ -f "$DSYM_ZIP" ]; then
+            echo "Found Fastlane dSYM archive: $DSYM_ZIP"
+            cp "$DSYM_ZIP" "$DSYM_NAME"
+          else
+            echo "Searching for .dSYM bundles in Xcode Archives and build working dir..."
+            ARCHIVE_DSYM_DIR=$(find "$HOME/Library/Developer/Xcode/Archives" -name "dSYMs" -type d 2>/dev/null | sort | tail -n 1)
+            if [ -n "$ARCHIVE_DSYM_DIR" ] && [ -d "$ARCHIVE_DSYM_DIR" ] && [ -n "$(ls -A "$ARCHIVE_DSYM_DIR" 2>/dev/null)" ]; then
+              (cd "$ARCHIVE_DSYM_DIR" && zip -r -q "$GITHUB_WORKSPACE/$DSYM_NAME" *.dSYM)
+            else
+              STAGE_DIR="${{ runner.temp }}/dsym-stage"
+              rm -rf "$STAGE_DIR"
+              mkdir -p "$STAGE_DIR"
+              find "$WORK_DIR" "$HOME/Library/Developer/Xcode/DerivedData" -name "*.dSYM" -type d 2>/dev/null | while read -r dsym; do
+                cp -R "$dsym" "$STAGE_DIR/" 2>/dev/null || true
+              done
+              if [ -n "$(ls -A "$STAGE_DIR" 2>/dev/null)" ]; then
+                (cd "$STAGE_DIR" && zip -r -q "$GITHUB_WORKSPACE/$DSYM_NAME" *.dSYM)
+              else
+                echo "::error::No dSYM files found in build output or Xcode Archives"
+                exit 1
+              fi
+              rm -rf "$STAGE_DIR"
+            fi
+          fi
+
+          rm -rf "$WORK_DIR"
+
+          echo "dsym_path=$DSYM_NAME" >> $GITHUB_OUTPUT
+          echo "dsym_name=$DSYM_NAME" >> $GITHUB_OUTPUT
+          echo "profile=$PROFILE" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_num=$BUILD_NUM" >> $GITHUB_OUTPUT
+
+      - name: Upload dSYM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tuanzi-${{ github.event.inputs.profile || 'prod' }}-dsym
+          path: ${{ steps.prepare-dsym.outputs.dsym_path }}
+          retention-days: 30
 
       - name: Submit to TestFlight / App Store
         run: |
@@ -80,3 +140,23 @@ jobs:
           eas submit --platform ios --profile "$PROFILE" --path=app.ipa --non-interactive --no-wait
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Generate Job Summary
+        if: always() && steps.prepare-dsym.outputs.dsym_path != ''
+        run: |
+          cat << EOF >> $GITHUB_STEP_SUMMARY
+          ## 🍎 iOS 构建完成
+
+          | 项目 | 信息 |
+          | :--- | :--- |
+          | **Profile** | \`${{ steps.prepare-dsym.outputs.profile }}\` |
+          | **Version** | \`${{ steps.prepare-dsym.outputs.version }}\` |
+          | **Build Number** | \`${{ steps.prepare-dsym.outputs.build_num }}\` |
+          | **dSYM 符号表文件** | \`${{ steps.prepare-dsym.outputs.dsym_name }}\` |
+          | **分支 / Commit** | \`${{ github.event.inputs.ref || 'main' }}\` |
+
+          ### ⬇️ 符号表 (dSYM) 下载指引
+          1. 滚动至当前页面底部的 **Artifacts** 区域；
+          2. 点击 **\`tuanzi-${{ github.event.inputs.profile || 'prod' }}-dsym\`** 进行下载；
+          3. 解压后可获得 **\`${{ steps.prepare-dsym.outputs.dsym_name }}\`**（内含 \`app.app.dSYM\` 及 \`ShareExtension.appex.dSYM\`），可直接用于 EMAS 崩溃分析等平台上传。
+          EOF
